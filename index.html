@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N9E 告警数据</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<h2>N9E 告警数据统计</h2>
+<label for="start-date">开始日期:</label>
+<input type="date" id="start-date">
+<label for="end-date">结束日期:</label>
+<input type="date" id="end-date">
+<button onclick="fetchAlerts()">查询</button>
+
+<h3>按天统计告警名称数量</h3>
+<canvas id="ruleChart"></canvas>
+
+<h3>按天统计告警分类数量</h3>
+<canvas id="groupChart"></canvas>
+
+<script>
+    function fetchAlerts() {
+        const startDate = $('#start-date').val();
+        const endDate = $('#end-date').val();
+        if (!startDate || !endDate) {
+            alert("请选择时间范围");
+            return;
+        }
+        $.get(`http://localhost:8080/api/alerts?start=${startDate}&end=${endDate}`, function(response) {
+            updateCharts(response.data);
+        });
+    }
+
+    function updateCharts(data) {
+        const dates = data.map(d => d.date);
+        const ruleNames = {};
+        const groupNames = {};
+
+        data.forEach(d => {
+            d.rule_name_counts.forEach(r => {
+                if (!ruleNames[r.name]) ruleNames[r.name] = [];
+                ruleNames[r.name].push(r.count);
+            });
+            d.group_name_counts.forEach(g => {
+                if (!groupNames[g.name]) groupNames[g.name] = [];
+                groupNames[g.name].push(g.count);
+            });
+        });
+
+        renderChart('ruleChart', '告警名称统计', dates, ruleNames);
+        renderChart('groupChart', '告警分类统计', dates, groupNames);
+    }
+
+    function renderChart(canvasId, label, labels, datasets) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: Object.keys(datasets).map((key, index) => ({
+                    label: key,
+                    data: datasets[key],
+                    borderColor: `hsl(${index * 60}, 70%, 50%)`,
+                    fill: false
+                }))
+            }
+        });
+    }
+</script>
+</body>
+</html>

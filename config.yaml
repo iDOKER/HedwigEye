@@ -1,0 +1,12 @@
+server:
+  port: 8080  # Web 服务器端口
+
+database:
+  host: "192.168.41.113"
+  port: 13306
+  user: "root"
+  password: "develop!"
+  name: "n9e_v6"
+
+alert:
+  default_days: 7  # 页面默认展示的告警天数
