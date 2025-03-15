@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N9E 告警数据</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .btn-export {
+            margin-top: 10px;
+        }
+        .chart-container {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2 class="mt-4">N9E 告警数据统计</h2>
+
+    <hr style="border: 1px solid #000000; margin: 20px 0;"> <!-- 修改: 更明显的水平分割线 -->
+
+    <div class="form-group">
+        <label for="start-date">开始日期:</label>
+        <input type="date" class="form-control" id="start-date">
+    </div>
+    <div class="form-group">
+        <label for="end-date">结束日期:</label>
+        <input type="date" class="form-control" id="end-date">
+    </div>
+    <div class="d-flex justify-content-end">
+        <button class="btn btn-primary" onclick="fetchAlerts()">查询</button>
+    </div>
+
+    <hr style="border: 1px solid #000000; margin: 20px 0;"> <!-- 修改: 更明显的水平分割线 -->
+
+    <div class="chart-container">
+        <h3>趋势图-按天统计告警名称数量</h3>
+        <div id="ruleChartRange"></div>
+        <canvas id="ruleChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h3>趋势图-按天统计告警分类数量</h3>
+        <div id="groupChartRange"></div>
+        <canvas id="groupChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h3>柱状图-告警名称数量统计</h3>
+        <div id="ruleNameCountChartRange"></div>
+        <canvas id="ruleNameCountChart"></canvas>
+    </div>
+
+    <!-- 新增: 告警分类数量统计柱状图 -->
+    <div class="chart-container">
+        <h3>柱状图-告警分类数量统计</h3>
+        <div id="groupNameCountChartRange"></div>
+        <canvas id="groupNameCountChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h3>分布图-告警名称数量占比</h3>
+        <div id="ruleNameCountPieChartRange"></div>
+        <canvas id="ruleNameCountPieChart"></canvas>
+    </div>
+
+    <!-- 新增: 告警名称表格 -->
+    <div class="chart-container">
+        <h3>告警名称数量统计</h3>
+        <div id="ruleNameTableRange"></div>
+        <table id="ruleNameTable" class="table table-striped">
+            <thead>
+            <tr>
+                <th>告警名称</th>
+                <th>数量</th>
+            </tr>
+            </thead>
+            <tbody>
+            <!-- 数据行将通过JavaScript动态插入 -->
+            </tbody>
+        </table>
+        <div class="d-flex justify-content-end">
+            <button class="btn btn-success btn-export" onclick="exportTableToCSV('ruleNameTable', 'ruleNameTable.csv')">导出为CSV</button> <!-- 修改: 将按钮放在一个div容器中并右对齐 -->
+        </div>
+    </div>
+
+    <!-- 新增: 告警分类表格 -->
+    <div class="chart-container">
+        <h3>告警分类数量统计</h3>
+        <div id="groupNameTableRange"></div>
+        <table id="groupNameTable" class="table table-striped">
+            <thead>
+            <tr>
+                <th>告警分类</th>
+                <th>数量</th>
+            </tr>
+            </thead>
+            <tbody>
+            <!-- 数据行将通过JavaScript动态插入 -->
+            </tbody>
+        </table>
+        <div class="d-flex justify-content-end">
+            <button class="btn btn-success btn-export" onclick="exportTableToCSV('groupNameTable', 'groupNameTable.csv')">导出为CSV</button> <!-- 修改: 将按钮放在一个div容器中并右对齐 -->
+        </div>
+    </div>
+
+    <hr style="border: 1px solid #000000; margin: 20px 0;"> <!-- 修改: 更明显的水平分割线 -->
+
+    <!-- 新增: 时间显示 -->
+    <div class="container mt-4 text-center">
+        <p id="dataGenerationTime">数据生成时间: -</p>
+        <p id="currentTime">当前时间: -</p>
+    </div>
+
+</div>
+
+<script>
+    let ruleChartInstance = null;
+    let groupChartInstance = null;
+    let ruleNameCountChartInstance = null;
+    let groupNameCountChartInstance = null;
+    let ruleNameCountPieChartInstance = null;
+    let dataGenerationTime = '-';
+
+    function fetchAlerts() {
+        let startDate = $('#start-date').val();
+        let endDate = $('#end-date').val();
+
+        if (!startDate || !endDate) {
+            const today = new Date();
+            const start = new Date(today);
+            start.setDate(today.getDate() - 31);
+
+            startDate = start.toISOString().split('T')[0];
+            endDate = today.toISOString().split('T')[0];
+
+            $('#start-date').val(startDate);
+            $('#end-date').val(endDate);
+        }
+
+        // 修改: 调整 endDate 为 endDate+1
+        const startApiDate = new Date(startDate);
+        startApiDate.setDate(startApiDate.getDate() - 1)
+        const endApiDate = new Date(endDate);
+        endApiDate.setDate(endApiDate.getDate() + 1);
+
+        // 更新数据生成时间
+        dataGenerationTime = new Date().toLocaleString();
+        $('#dataGenerationTime').text(`数据生成时间: ${dataGenerationTime}`);
+
+        // 修改: 从浏览器地址栏获取API URL
+        const apiUrl = new URL(window.location.href);
+        apiUrl.pathname = '/api/alerts';
+        apiUrl.searchParams.set('start', startApiDate.toISOString().split('T')[0]);
+        apiUrl.searchParams.set('end', endApiDate.toISOString().split('T')[0]);
+
+        $.get(apiUrl.toString(), function(response) {
+            updateTables(response.data); // 修改: 调用新的更新表格函数
+            updateCharts(response.data);
+        });
+
+        // 新增: 确保每次点击查询按钮时，时间范围都能正确更新
+        $('#ruleChartRange').text(`时间范围: ${startDate} 至 ${endDate}`);
+        $('#groupChartRange').text(`时间范围: ${startDate} 至 ${endDate}`);
+        $('#ruleNameCountChartRange').text(`时间范围: ${startDate} 至 ${endDate}`);
+        $('#ruleNameCountPieChartRange').text(`时间范围: ${startDate} 至 ${endDate}`);
+        $('#groupNameCountChartRange').text(`时间范围: ${startDate} 至 ${endDate}`); // 新增: 更新时间范围显示
+        $('#ruleNameTableRange').text(`时间范围: ${startDate} 至 ${endDate}`); // 新增: 更新时间范围显示
+        $('#groupNameTableRange').text(`时间范围: ${startDate} 至 ${endDate}`); // 新增: 更新时间范围显示
+    }
+
+    function updateCharts(data) {
+        const dates = data.map(d => d.date).sort();
+
+        const ruleNames = {};
+        const groupNames = {};
+        const ruleNameCounts = {};
+
+        // 初始化所有数据为 0
+        data.forEach(d => {
+            d.rule_name_counts.forEach(r => {
+                if (!ruleNames[r.name]) ruleNames[r.name] = dates.map(() => 0);
+            });
+            d.group_name_counts.forEach(g => {
+                if (!groupNames[g.name]) groupNames[g.name] = dates.map(() => 0);
+            });
+        });
+
+
+        // 赋值真实数据
+        data.forEach(d => {
+            let dateIndex = dates.indexOf(d.date);
+            d.rule_name_counts.forEach(r => {
+                ruleNames[r.name][dateIndex] = r.count;
+            });
+            d.group_name_counts.forEach(g => {
+                groupNames[g.name][dateIndex] = g.count;
+            });
+        });
+
+        // 确保每个告警名称和分类在所有日期都有对应的值，如果没有则填充为0
+        dates.forEach(date => {
+            const dayData = data.find(d => d.date === date);
+            if (dayData) {
+                dayData.rule_name_counts.forEach(r => {
+                    if (!ruleNames[r.name]) ruleNames[r.name] = [];
+                    ruleNames[r.name].push(r.count);
+                    if (!ruleNameCounts[r.name]) ruleNameCounts[r.name] = 0;
+                    ruleNameCounts[r.name] += r.count;
+                });
+                dayData.group_name_counts.forEach(g => {
+                    if (!groupNames[g.name]) groupNames[g.name] = [];
+                    groupNames[g.name].push(g.count);
+                });
+            }
+            Object.keys(ruleNames).forEach(name => {
+                if (ruleNames[name].length < dates.length) {
+                    ruleNames[name].push(0);
+                }
+            });
+            Object.keys(groupNames).forEach(name => {
+                if (groupNames[name].length < dates.length) {
+                    groupNames[name].push(0);
+                }
+            });
+        });
+
+        // 销毁旧的图表实例
+        if (ruleChartInstance) ruleChartInstance.destroy();
+        if (groupChartInstance) groupChartInstance.destroy();
+        if (ruleNameCountChartInstance) ruleNameCountChartInstance.destroy();
+        if (ruleNameCountPieChartInstance) ruleNameCountPieChartInstance.destroy();
+        if (groupNameCountChartInstance) groupNameCountChartInstance.destroy();
+
+        // 渲染新的图表实例
+        ruleChartInstance = renderChart('ruleChart', '告警名称统计', dates, ruleNames);
+        groupChartInstance = renderChart('groupChart', '告警分类统计', dates, groupNames);
+
+        const sortedRuleNameCounts = Object.entries(ruleNameCounts).sort((a, b) => b[1] - a[1]);
+        const ruleNameLabels = sortedRuleNameCounts.map(([name]) => name);
+        const ruleNameData = sortedRuleNameCounts.map(([, count]) => count);
+        ruleNameCountChartInstance = renderBarChart('ruleNameCountChart', '告警名称数量统计', ruleNameLabels, ruleNameData);
+        ruleNameCountPieChartInstance = renderPieChart('ruleNameCountPieChart', '告警名称数量占比', ruleNameLabels, ruleNameData);
+
+        // 新增: 更新告警分类数量统计柱状图
+        const sortedGroupNames = Object.entries(groupNames).sort((a, b) => b[1].reduce((acc, val) => acc + val, 0) - a[1].reduce((acc, val) => acc + val, 0));
+        const groupNameLabels = sortedGroupNames.map(([name]) => name);
+        const groupNameData = sortedGroupNames.map(([, counts]) => counts.reduce((acc, val) => acc + val, 0));
+        groupNameCountChartInstance = renderBarChart('groupNameCountChart', '告警分类数量统计', groupNameLabels, groupNameData);
+    }
+
+    // 新增: 更新表格数据
+    function updateTables(data) {
+        const ruleNameCounts = {};
+        const groupNames = {};
+
+        data.forEach(dayData => {
+            dayData.rule_name_counts.forEach(rule => {
+                if (!ruleNameCounts[rule.name]) ruleNameCounts[rule.name] = 0;
+                ruleNameCounts[rule.name] += rule.count;
+            });
+
+            dayData.group_name_counts.forEach(group => {
+                if (!groupNames[group.name]) groupNames[group.name] = 0;
+                groupNames[group.name] += group.count;
+            });
+        });
+
+        // 更新告警名称表格
+        const sortedRuleNameCounts = Object.entries(ruleNameCounts).sort((a, b) => b[1] - a[1]);
+        const ruleNameTableBody = $('#ruleNameTable tbody');
+        // console.log('Clearing ruleNameTableBody'); // 调试信息
+        ruleNameTableBody.empty();
+
+        sortedRuleNameCounts.forEach(([name, count]) => {
+            const row = $('<tr>');
+            row.append($('<td>').text(name));
+            row.append($('<td>').text(count));
+            ruleNameTableBody.append(row);
+        });
+
+        // 更新告警分类表格
+        const sortedGroupNames = Object.entries(groupNames).sort((a, b) => b[1] - a[1]);
+        const groupNameTableBody = $('#groupNameTable tbody');
+        // console.log('Clearing groupNameTableBody'); // 调试信息
+        groupNameTableBody.empty();
+
+        sortedGroupNames.forEach(([name, count]) => {
+            const row = $('<tr>');
+            row.append($('<td>').text(name));
+            row.append($('<td>').text(count));
+            groupNameTableBody.append(row);
+        });
+    }
+
+    function renderChart(canvasId, label, labels, datasets) {
+        // 确保每个数据集在所有日期都有值，如果没有值则默认设置为0
+        Object.keys(datasets).forEach(key => {
+            const dataMap = {};
+            datasets[key].forEach((value, index) => {
+                dataMap[labels[index]] = value;
+            });
+            datasets[key] = labels.map(date => dataMap[date] || 0);
+        });
+
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: Object.keys(datasets).map((key, index) => ({
+                    label: key,
+                    data: datasets[key],
+                    borderColor: `hsl(${index * 60}, 70%, 50%)`,
+                    fill: false,
+                    lineTension: 0.1 // 修改: 增加lineTension属性以使曲线更平滑
+                }))
+            }
+        });
+    }
+
+    function renderBarChart(canvasId, label, labels, data) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        return new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    function renderPieChart(canvasId, label, labels, data) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        return new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.2)',
+                        'rgba(54, 162, 235, 0.2)',
+                        'rgba(255, 206, 86, 0.2)',
+                        'rgba(75, 192, 192, 0.2)',
+                        'rgba(153, 102, 255, 0.2)',
+                        'rgba(255, 159, 64, 0.2)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(54, 162, 235, 1)',
+                        'rgba(255, 206, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(153, 102, 255, 1)',
+                        'rgba(255, 159, 64, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: true,
+                        text: label
+                    }
+                }
+            }
+        });
+    }
+
+    // 新增: 导出表格为CSV的函数
+    function exportTableToCSV(tableID, filename = ''){
+        var downloadLink;
+        var dataType = 'application/csv;charset=utf-8;';
+        var tableSelect = document.getElementById(tableID);
+        var csv = [];
+        var rows = tableSelect.querySelectorAll("tr");
+
+        for (var i = 0; i < rows.length; i++) {
+            var row = [], cols = rows[i].querySelectorAll("td, th");
+            for (var j = 0; j < cols.length; j++) {
+                row.push(cols[j].innerText);
+            }
+            csv.push(row.join(","));
+        }
+
+        // 创建一个隐藏的 <a> 元素
+        downloadLink = document.createElement("a");
+
+        document.body.appendChild(downloadLink);
+
+        if (navigator.msSaveOrOpenBlob) {
+            var blob = new Blob(['\ufeff' + csv.join('\n')], {
+                type: dataType
+            });
+            navigator.msSaveOrOpenBlob(blob, filename);
+        } else {
+            var csvFile = new Blob(['\ufeff' + csv.join('\n')], {
+                type: dataType
+            });
+            var url = URL.createObjectURL(csvFile);
+            downloadLink.href = url;
+            downloadLink.download = filename;
+            downloadLink.click();
+        }
+    }
+
+    // 新增: 实时更新当前时间
+    function updateCurrentTime() {
+        const now = new Date().toLocaleString();
+        $('#currentTime').text(`当前时间: ${now}`);
+    }
+
+    setInterval(updateCurrentTime, 1000); // 每秒更新一次当前时间
+
+</script>
+</body>
+</html>
